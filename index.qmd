@@ -1,5 +1,5 @@
 ---
-title: "Google Summer of Code 2026 — Final Report"
+title: "Google Summer of Code 2026 Final Report"
 subtitle: "Object detection and item transforms for the R torchvision ecosystem"
 author: "Srishti Dutta"
 date: 2026-08-19
@@ -18,11 +18,12 @@ toc-depth: 3
 
 The work spans two packages. In **torchvision**, an R port of PyTorch's vision
 library, I added the LW-DETR family of real-time detection transformers and
-built out the `item_transform_*` family — augmentations that transform a whole
-dataset item so that the image and its target (bounding boxes or segmentation
-masks) stay aligned. In **torchvisionlib**, which supplies compiled ops to
-torchvision, I contributed two native operators: the multi-scale deformable
-attention kernel that LW-DETR's decoder depends on, and rotated-box IoU.
+built out the `item_transform_*` family, which are augmentations that transform
+a whole dataset item so the image and its target (bounding boxes or
+segmentation masks) stay aligned. In **torchvisionlib**, which supplies compiled
+ops to torchvision, I contributed two native operators: the multi-scale
+deformable attention kernel that LW-DETR's decoder depends on, and rotated-box
+IoU.
 
 ---
 
@@ -31,29 +32,31 @@ attention kernel that LW-DETR's decoder depends on, and rotated-box IoU.
 ### 1. Fix `draw_keypoints()` documentation and error message typo
 
 [mlverse/torchvision#296](https://github.com/mlverse/torchvision/pull/296) ·
-merged 25 March 2026 · +19 −7 across 3 files
+merged 25 March 2026 · +19 -7 across 3 files
 
 My first contribution to the package. Three documentation defects in
-`R/vision_utils.R`: the `connectivity` parameter was annotated as a `Vector`
-when it accepts a `list(c(i, j), ...)` of pairs and carried a stale
-"currently unavailable" note; the `colors` parameter had two copy-paste errors
-carried over from `draw_bounding_boxes()` (`"boxes"` for `"keypoints"`, and
-`"viridis"` for `"rainbow"` — the function calls `grDevices::rainbow()`); and an
-error message read `"but is current shape is"`. Fixed at the roxygen2 source,
-with `man/draw_keypoints.Rd` regenerated.
+`R/vision_utils.R`. The `connectivity` parameter was annotated as a `Vector`
+when it accepts a `list(c(i, j), ...)` of pairs, and carried a stale
+"currently unavailable" note describing behaviour that had since been
+implemented. The `colors` parameter had two copy-paste errors carried over from
+`draw_bounding_boxes()`: it said `"boxes"` where it meant `"keypoints"`, twice,
+and named `"viridis"` when the function calls `grDevices::rainbow()`. An error
+message read `"but is current shape is"`. All three were fixed at the roxygen2
+source with `man/draw_keypoints.Rd` regenerated, which is the part I had to be
+told about.
 
 ### 2. Dispatch NMS to `torchvisionlib::ops_nms()` when available
 
 [mlverse/torchvision#325](https://github.com/mlverse/torchvision/pull/325) ·
-merged 10 June 2026 · +45 −4 across 4 files ·
+merged 10 June 2026 · +45 -4 across 4 files ·
 closes [#321](https://github.com/mlverse/torchvision/issues/321),
 [#322](https://github.com/mlverse/torchvision/issues/322)
 
 Non-maximum suppression ran in pure R on every inference call for all four
 FasterRCNN variants and both MaskRCNN variants, and it dominated their runtime.
 `nms()` now dispatches to the native C++ `torchvisionlib::ops_nms()` when
-torchvisionlib is installed, keeping the pure R path as a fallback so behaviour
-is unchanged for users without it.
+torchvisionlib is installed, and keeps the pure R path as a fallback so
+behaviour is unchanged for users without it.
 
 Measured on a 520×520 image on CPU:
 
@@ -63,51 +66,104 @@ Measured on a 520×520 image on CPU:
 | `model_maskrcnn_resnet50_fpn` | ~1.7 min / image | ~25 s / image |
 
 FasterRCNN went from unusable for interactive work to responsive. Tests cover
-both the native dispatch and the fallback.
+both the native dispatch and the fallback, since the point of the change is
+that the two agree.
 
 ### 3. Add LW-DETR object detection models
 
 [mlverse/torchvision#334](https://github.com/mlverse/torchvision/pull/334) ·
-merged 4 July 2026 · +1,419 −6 across 13 files ·
+merged 4 July 2026 · +1,419 -6 across 13 files ·
 closes [#328](https://github.com/mlverse/torchvision/issues/328)
 
 An implementation of [LW-DETR](https://arxiv.org/abs/2406.03459), a real-time
-detection transformer, exposed as `model_lw_detr_tiny()`,
-`model_lw_detr_small()`, `model_lw_detr_medium()` and `model_lw_detr_large()`
-with COCO-pretrained weights. The architecture is a ViT backbone, a C2f
-multi-scale projector, and a two-stage deformable-attention decoder. All four
-variants load the official weights with exact key and shape match and reproduce
-reference detections; `pixel_mask` is supported so letterboxed non-square inputs
-work correctly.
+detection transformer, in a single 1,101-line `R/models-lw_detr.R`. The
+architecture has three stages.
+
+The **ViT backbone** interleaves windowed and global attention. Which blocks
+are windowed is set per variant by `window_block_indexes`, and intermediate
+activations are tapped at `out_feature_indexes` rather than only at the final
+layer, so the projector receives several depths of feature at once.
+
+The **C2f projector** takes those tapped features and produces the multi-scale
+feature map the decoder samples from. On the large variant it runs at two
+scales, `c(2.0, 0.5)`, which is why that variant carries its own sampling and
+scale layers.
+
+The **two-stage decoder** generates proposals from the feature map, then refines
+them with deformable cross-attention over a small number of sampled points per
+query (`n_points`, 2 on the smaller variants and 4 on large) instead of
+attending to every spatial position.
+
+Four variants are exposed:
+
+| | `embed_dim` | depth | queries | scales | `n_points` |
+|---|---:|---:|---:|---|---:|
+| `model_lw_detr_tiny()` | 192 | 6 | 100 | 1.0 | 2 |
+| `model_lw_detr_small()` | 192 | 10 | 300 | 1.0 | 2 |
+| `model_lw_detr_medium()` | 384 | 10 | 300 | 1.0 | 2 |
+| `model_lw_detr_large()` | 384 | 10 | 300 | 2.0, 0.5 | 4 |
+
+All four load the official COCO checkpoints with exact key and shape match and
+reproduce reference detections. Getting there was most of the work: a port that
+runs is easy to write and hard to trust, and matching keys against the reference
+implementation is what turns "it produces boxes" into "it produces the right
+boxes".
+
+`forward()` takes `(images, pixel_mask = NULL)`. Non-square inputs are handled
+by letterboxing, resizing the longest side to 640 and padding to 640×640, then
+passing a logical `pixel_mask` that is `TRUE` over real pixels. The padded
+region is excluded from attention and boxes come back in the coordinates of the
+unpadded image, which matches the reference preprocessing. Omitting the mask
+treats the whole frame as valid and is only correct for square, unpadded input.
+
+The decoder's cross-attention needs multi-scale deformable attention. At this
+point only a pure R `nnf_grid_sample()` fallback existed, which is what led to
+the CUDA op in contribution 5 below.
 
 This replaced an earlier attempt in
-[#332](https://github.com/mlverse/torchvision/pull/332), which I closed in
-favour of a rewrite after review.
+[#332](https://github.com/mlverse/torchvision/pull/332), which I closed and
+rewrote after review.
 
 ### 4. Preallocate lists and vectors before iteration loops
 
 [mlverse/torchvision#341](https://github.com/mlverse/torchvision/pull/341) ·
-merged 20 July 2026 · +154 −170 across 15 files ·
+merged 20 July 2026 · +154 -170 across 15 files ·
 closes [#335](https://github.com/mlverse/torchvision/issues/335)
 
-A package-wide cleanup. Lists grown one element at a time reallocate on every
-iteration; where the final length is known before the loop they are now
-allocated with `vector("list", n)` and assigned by index. `folder_make_dataset()`
-and the Cityscapes image collection gather into a preallocated list and
-`unlist()` once rather than calling `c()` per iteration. Touches fifteen model
-and dataset files.
+A package-wide cleanup, and the only contribution that removed more lines than
+it added. Lists grown one element at a time reallocate on every iteration, so
+where the final length is known before the loop they are now allocated with
+`vector("list", n)` and assigned by index. `folder_make_dataset()` and the
+Cityscapes image collection gather into a preallocated list and `unlist()` once
+instead of calling `c()` per iteration, which is the case where the old pattern
+cost the most, since those loops run over every file in a dataset directory.
+Touches fifteen model and dataset files.
 
 ### 5. Multi-scale deformable attention CUDA op
 
 [mlverse/torchvisionlib#33](https://github.com/mlverse/torchvisionlib/pull/33) ·
-merged 1 August 2026 · +2,136 −29 across 26 files ·
+merged 1 August 2026 · +2,136 -29 across 26 files ·
 fixes [#25](https://github.com/mlverse/torchvisionlib/issues/25)
 
-`ops_ms_deform_attn()`, the multi-scale deformable attention operator LW-DETR's
-decoder cross-attention requires, replacing the slow pure-R `grid_sample`
-fallback on GPU. The largest single contribution of the summer: CUDA and CPU
-kernels, the autograd binding, the C++ export plumbing on both the `csrc/` and
-`src/` sides, `.def` export files, Rcpp bindings, and the R-CMD-check workflow.
+The largest contribution of the summer, and the one that took the longest.
+`ops_ms_deform_attn()` is the operator LW-DETR's decoder cross-attention needs,
+replacing the pure R `grid_sample` fallback on GPU.
+
+The op itself is only part of it. Adding a native operator to torchvisionlib
+means writing the CUDA kernel and its `im2col` helper, a CPU kernel, and the
+autograd binding, then threading the symbol through the export plumbing on both
+the `csrc/` and `src/` sides, the `.def` export files, and the Rcpp bindings,
+before it is callable from R at all. The R-CMD-check workflow needed updating
+too. That is why a single operator touches 26 files.
+
+The signature is
+`ops_ms_deform_attn(value, spatial_shapes, level_start_index, sampling_locations, attention_weights, im2col_step = 64)`.
+One detail worth recording, because it cost me time: `spatial_shapes` and
+`level_start_index` keep the kernel's 0-based indexing convention rather than
+being converted to R's 1-based indexing. The output is a feature tensor rather
+than a set of indices, so no adjustment is applied on the way back either. This
+is the opposite of the convention in `ops_nms()`, which does `$add(1L)` on its
+result precisely because it returns indices. Both are documented now.
 
 ### 6. `item_transform_affine()` and `target_transform_affine()`
 
@@ -115,36 +171,68 @@ kernels, the autograd binding, the C++ export plumbing on both the `csrc/` and
 merged 10 August 2026 · +684 across 15 files ·
 closes [#347](https://github.com/mlverse/torchvision/issues/347)
 
-Applies an affine transformation — rotation, translation, scale and shear — to
-a whole dataset item, keeping the target aligned with the image. Covers
-detection and segmentation items and their datasets, following the S3-dispatch
-convention set out in
+Applies an affine transformation, meaning rotation, translation, scale and
+shear, to a whole dataset item so the target stays aligned with the image.
+
+This is where I learned the S3 pattern the rest of my summer's work follows.
+A generic dispatches on the item's class, so
+`item_transform_affine.image_with_bounding_box()` warps boxes,
+`item_transform_affine.image_with_segmentation_mask()` warps masks, and
+`item_transform_affine.dataset()` wraps `.getitem()` so the same transform
+applies to every item a dataset yields. A `.default()` method exists only to
+raise a clear error when the input is a bare tensor rather than an item, which
+is the mistake a user is most likely to make.
+
+The split between `item_transform_*` and `target_transform_*` matters: the
+target transform does the geometry on boxes alone and is reusable, while the
+item transform is the layer that keeps image and target consistent. The
+convention comes from
 [#343](https://github.com/mlverse/torchvision/issues/343), the umbrella issue
 tracking `item_transform_` coverage against PyTorch's `transforms.v2`.
 
 ### 7. Extend `item_transform_rotate()` to segmentation
 
 [mlverse/torchvision#379](https://github.com/mlverse/torchvision/pull/379) ·
-merged 10 August 2026 · +115 −10 across 5 files ·
+merged 10 August 2026 · +115 -10 across 5 files ·
 closes [#363](https://github.com/mlverse/torchvision/issues/363)
 
 Adds `item_transform_rotate.image_with_segmentation_mask()` and
-`item_transform_rotate.dataset()`, so masks rotate alongside the image using
-nearest-neighbour sampling — which matters because masks hold discrete class
-labels that interpolation would corrupt. Detection items still return
-`image_with_rotated_box` with boxes in `xyxyr` format; segmentation items keep
-their class.
+`item_transform_rotate.dataset()`.
+
+The mask branch rotates the image with whatever `interpolation` and `fill` the
+caller passed, but always rotates the masks with `interpolation = 0` and
+`fill = 0`. Masks hold discrete class labels, so bilinear resampling would
+average neighbouring labels into values that are not classes at all. It also
+updates `image_height` and `image_width` on the target, because `expand = TRUE`
+grows the canvas and a target still describing the old dimensions would be
+silently wrong.
+
+The tests pin this down rather than checking that something happened: a
+0-degree rotation must return the masks unchanged, and a 90-degree rotation must
+equal `masks$transpose(-1, -2)$flip(-2)` exactly, which is only true if no
+interpolation occurred.
 
 ### 8. Add `ops_box_iou_rotated()`
 
 [mlverse/torchvisionlib#34](https://github.com/mlverse/torchvisionlib/pull/34) ·
-merged 17 August 2026 · +801 −1 across 23 files ·
+merged 17 August 2026 · +801 -1 across 23 files ·
 fixes [#31](https://github.com/mlverse/torchvisionlib/issues/31)
 
-IoU between rotated boxes on CPU, accepting the `cxcywhr`, `xywhr` and
-`xyxyxyxy` formats. Rotated-box IoU needs polygon clipping rather than the
-axis-aligned rectangle intersection that ordinary IoU uses, so this is a
-genuinely separate kernel rather than a variation on `ops_nms()`.
+Pairwise IoU between two sets of rotated boxes on CPU, returning an `N × M`
+float32 matrix.
+
+Three input formats are accepted: `cxcywhr` (centre, width, height, angle in
+degrees), `xywhr` (top-left corner instead of centre), and `xyxyxyxy` (the four
+corners directly). Conversion to `cxcywhr` happens in R, so the C++ kernel has
+one representation to handle.
+
+Rotated IoU is a genuinely different computation from the axis-aligned kind,
+not a variation on `ops_nms()`. Two axis-aligned rectangles intersect in a
+rectangle you can get from four `min`/`max` operations. Two rotated rectangles
+intersect in a convex polygon of up to eight vertices, so the kernel has to clip
+one box against the other and compute the area of the result. Having already
+been through the export plumbing for the deformable attention op made the
+non-kernel half of this PR much faster to write.
 
 ---
 
@@ -159,46 +247,56 @@ closes [#362](https://github.com/mlverse/torchvision/issues/362) ·
 
 Resizing for detection items and datasets and for segmentation items and
 datasets. Boxes are rescaled by the factors actually applied to the image
-rather than the requested ones, which matters when aspect ratio is preserved;
-masks resize with nearest-neighbour sampling so their discrete values survive.
+rather than the ones requested, which differ whenever aspect ratio is preserved
+or rounding moves the output by a pixel. Masks resize with nearest-neighbour
+sampling, for the same reason they do under rotation.
 
 ### `item_transform_random_resize_crop()`
 
 [mlverse/torchvision#386](https://github.com/mlverse/torchvision/pull/386) ·
-opened 11 August 2026 · +556 −3 across 9 files ·
+opened 11 August 2026 · +556 -3 across 9 files ·
 closes [#361](https://github.com/mlverse/torchvision/issues/361) ·
 **changes requested**
 
-The random resized crop augmentation across all four item kinds: object
-detection item and dataset, semantic segmentation item and dataset. Includes a
-fix keeping the central-crop fallback inside the image bounds.
+Random resized crop across all four item kinds: object detection item and
+dataset, semantic segmentation item and dataset. The random parameters are
+drawn once per item so that image and target receive the same crop, which is
+the whole difficulty with random augmentation at the item level. Includes a fix
+keeping the central-crop fallback inside the image bounds when the sampler fails
+to find a valid crop.
 
 ### `item_transform_random_affine()`
 
 [mlverse/torchvision#390](https://github.com/mlverse/torchvision/pull/390) ·
-opened 14 August 2026 · +458 −48 across 9 files ·
+opened 14 August 2026 · +458 -48 across 9 files ·
 closes [#354](https://github.com/mlverse/torchvision/issues/354) ·
 **awaiting review**
 
 Random affine for detection items, segmentation items and their datasets,
 drawing rotation, translation, scale and shear once per item so image and
-target stay aligned. Also fixes a bug in the existing
-`transform_random_affine()`: given a bare number for `shear`, it widened
-`degrees` instead of `shear`, leaving the shear range incomplete and making
-sampling fail.
+target stay aligned.
+
+It also fixes a pre-existing bug in `transform_random_affine()`. Given a bare
+number for `shear`, the function widened `degrees` into a range instead of
+`shear`, leaving the shear range incomplete and making sampling fail. The bug
+was invisible until something called the function with a scalar `shear`, which
+is what the new item-level transform does.
 
 ### `object_detection_dataset` and `object_detection_target` S3 classes
 
 [mlverse/torchvision#391](https://github.com/mlverse/torchvision/pull/391) ·
-opened 19 August 2026 · +174 −26 across 21 files ·
+opened 19 August 2026 · +174 -26 across 21 files ·
 closes [#364](https://github.com/mlverse/torchvision/issues/364) ·
 **awaiting review**
 
-A structural change rather than a new feature. Detection datasets now carry an
+A structural change rather than a new feature, and the natural conclusion of the
+`item_transform_` work. Detection datasets now carry an
 `object_detection_dataset` class and their item target `y` an
 `object_detection_target` class, so target transforms dispatch on class instead
-of inspecting the target's fields. Touches the COCO and Pascal VOC datasets and
-the six RF100 collections.
+of inspecting which fields the target happens to have. Field inspection worked
+while there was one kind of detection target, and stops working as soon as
+there are two. Touches the COCO and Pascal VOC datasets and the six RF100
+collections.
 
 ---
 
@@ -212,15 +310,16 @@ address, two are awaiting first review.
 
 <!-- ## Reflections
 
-     Uncomment the heading above and write this section — it is the part your
-     mentors will read most closely. Some things worth covering:
-       - What was hardest? The CUDA kernel in torchvisionlib#33 and the weight-
-         matching in the LW-DETR port are the obvious candidates.
-       - What did you learn about R package conventions — S3 dispatch, roxygen2,
-         NAMESPACE, R CMD check — that you did not know in May?
+     Uncomment the heading above and write this section. It is the part your
+     mentors will read most closely, and it is the one part of this report that
+     has to be in your own voice. Things worth covering:
+       - What was hardest? The CUDA kernel in torchvisionlib#33 and the
+         weight-matching in the LW-DETR port are the obvious candidates.
+       - What did you learn about R package conventions (S3 dispatch, roxygen2,
+         NAMESPACE, R CMD check) that you did not know in May?
        - What did review feedback change about how you write code?
-       - What would you do differently, e.g. what led to #332 being closed and
-         rewritten as #334? -->
+       - What would you do differently? #332 being closed and rewritten as #334
+         is a concrete place to start. -->
 
 <!-- ## Acknowledgements
 
