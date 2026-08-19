@@ -4,3 +4,5 @@ quarto.tar.gz
 quarto-*/
 .DS_Store
 .Rproj.user
+
+**/*.quarto_ipynb

@@ -8,6 +8,8 @@ website:
   site-url: "https://srishti-gsoc.netlify.app"
   navbar:
     right:
+      - href: final-report.qmd
+        text: GSOC Report
       - href: index.qmd
         text: Blog
       - href: about.qmd
