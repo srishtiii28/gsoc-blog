@@ -4,8 +4,9 @@ project:
 
 website:
   title: "Srishti Dutta"
-  description: "Google Summer of Code 2026 final report — the R Project"
+  description: "Google Summer of Code 2026 final report for The R Project for Statistical Computing"
   site-url: "https://srishti-gsoc.netlify.app"
+  search: false
   navbar:
     right:
       - icon: github
