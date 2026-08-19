@@ -1,8 +1,6 @@
 ---
 title: "Google Summer of Code 2026 Final Report"
 subtitle: "Object detection and item transforms for the R torchvision ecosystem"
-author: "Srishti Dutta"
-date: 2026-08-19
 toc: true
 toc-depth: 3
 ---
