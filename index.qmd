@@ -210,10 +210,10 @@ address, two are awaiting first review.
 <!-- Add anything else you and Christophe have agreed is still outstanding,
      and anything you plan to keep maintaining after GSOC ends. -->
 
-## Reflections
+<!-- ## Reflections
 
-<!-- This section is yours to write, and it is the part your mentors will read
-     most closely. Some things worth covering:
+     Uncomment the heading above and write this section — it is the part your
+     mentors will read most closely. Some things worth covering:
        - What was hardest? The CUDA kernel in torchvisionlib#33 and the weight-
          matching in the LW-DETR port are the obvious candidates.
        - What did you learn about R package conventions — S3 dispatch, roxygen2,
@@ -222,6 +222,7 @@ address, two are awaiting first review.
        - What would you do differently, e.g. what led to #332 being closed and
          rewritten as #334? -->
 
-## Acknowledgements
+<!-- ## Acknowledgements
 
-<!-- Thank your mentor and the mlverse maintainers in your own words. -->
+     Uncomment the heading above and thank your mentor and the mlverse
+     maintainers in your own words. -->
