@@ -1,0 +1,23 @@
+---
+title: "Starting GSOC 2026 with the R Project"
+date: 2026-08-19
+categories: [gsoc, torchvision]
+draft: true
+---
+
+<!-- This is a skeleton. Replace every comment below with your own writing —
+     remove `draft: true` above once you're ready to publish. -->
+
+## What the project is
+
+<!-- What are you working on this summer, in your own words? Which package,
+     which mentors, and what problem does the work solve for its users? -->
+
+## What I've done so far
+
+<!-- The item transforms you've already contributed, and what you learned
+     building them. -->
+
+## What's next
+
+<!-- Your plan for the coming weeks. -->

@@ -1,0 +1,8 @@
+[build]
+  publish = "_site"
+  command = """
+    curl -sL -o quarto.tar.gz https://github.com/quarto-dev/quarto-cli/releases/download/v1.10.18/quarto-1.10.18-linux-amd64.tar.gz && \
+    tar -xzf quarto.tar.gz && \
+    export PATH="$PWD/quarto-1.10.18/bin:$PATH" && \
+    quarto render
+  """

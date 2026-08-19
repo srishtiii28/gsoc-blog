@@ -1,0 +1,12 @@
+---
+title: "About"
+about:
+  template: trestles
+  links:
+    - icon: github
+      text: GitHub
+      href: https://github.com/srishtiii28
+---
+
+<!-- Write a few sentences about yourself here: who you are, what you study,
+     and what your GSOC 2026 project with the R Project is about. -->

@@ -1,0 +1,6 @@
+/.quarto/
+/_site/
+quarto.tar.gz
+quarto-*/
+.DS_Store
+.Rproj.user
