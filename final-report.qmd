@@ -127,8 +127,9 @@ closes [#347](https://github.com/mlverse/torchvision/issues/347)
 Applies an affine transformation — rotation, translation, scale and shear — to
 a whole dataset item, keeping the target aligned with the image. Covers
 detection and segmentation items and their datasets, following the S3-dispatch
-convention established in
-[#343](https://github.com/mlverse/torchvision/pull/343).
+convention set out in
+[#343](https://github.com/mlverse/torchvision/issues/343), the umbrella issue
+tracking `item_transform_` coverage against PyTorch's `transforms.v2`.
 
 ### 7. Extend `item_transform_rotate()` to segmentation
 
